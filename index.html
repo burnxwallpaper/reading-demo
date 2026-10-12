@@ -43,33 +43,74 @@
     </section>
 
     <!-- Reader -->
-    <section id="view-reader" class="view" hidden>
-      <header class="topbar reader-topbar">
-        <button type="button" class="icon-btn" id="reader-toc" aria-label="目錄">目錄</button>
-        <div class="topbar-text">
-          <h1 class="topbar-title" id="reader-title">章節</h1>
-          <p class="topbar-sub" id="reader-cache-status"></p>
-        </div>
-        <div class="font-size-controls" role="group" aria-label="字體大小">
-          <button type="button" class="icon-btn font-btn" id="font-smaller" aria-label="縮小字體">A−</button>
-          <button type="button" class="icon-btn font-btn" id="font-larger" aria-label="放大字體">A+</button>
-        </div>
-        <button type="button" class="icon-btn" id="reader-home" aria-label="書庫">⌂</button>
-      </header>
-      <nav class="chapter-nav top-nav">
-        <button type="button" id="prev-top" class="btn nav-btn">上一章</button>
-        <span class="nav-chapter" id="nav-chapter-top" aria-live="polite"></span>
-        <button type="button" id="next-top" class="btn nav-btn">下一章</button>
-      </nav>
-      <article class="chapter-detail">
+    <section id="view-reader" class="view mode-scroll" hidden>
+      <!-- Scroll-mode chrome (always visible in scroll mode) -->
+      <div class="scroll-ui" id="scroll-ui">
+        <header class="topbar reader-topbar">
+          <button type="button" class="icon-btn" id="reader-toc" aria-label="目錄">目錄</button>
+          <div class="topbar-text">
+            <h1 class="topbar-title" id="reader-title">章節</h1>
+            <p class="topbar-sub" id="reader-cache-status"></p>
+          </div>
+          <button type="button" class="icon-btn mode-btn" id="mode-toggle-scroll" aria-label="切換翻頁">翻頁</button>
+          <div class="font-size-controls" role="group" aria-label="字體大小">
+            <button type="button" class="icon-btn font-btn" id="font-smaller" aria-label="縮小字體">A−</button>
+            <button type="button" class="icon-btn font-btn" id="font-larger" aria-label="放大字體">A+</button>
+          </div>
+          <button type="button" class="icon-btn" id="reader-home" aria-label="書庫">⌂</button>
+        </header>
+        <nav class="chapter-nav top-nav">
+          <button type="button" id="prev-top" class="btn nav-btn">上一章</button>
+          <span class="nav-chapter" id="nav-chapter-top" aria-live="polite"></span>
+          <button type="button" id="next-top" class="btn nav-btn">下一章</button>
+        </nav>
+      </div>
+
+      <article class="chapter-detail" id="scroll-article">
         <h2 class="chapter-name" id="chapter-name"></h2>
         <div class="chapter-content" id="chapter-content"></div>
       </article>
-      <nav class="chapter-nav bottom-nav">
+
+      <nav class="chapter-nav bottom-nav scroll-ui" id="scroll-bottom-nav">
         <button type="button" id="prev-bottom" class="btn nav-btn">上一章</button>
         <span class="nav-chapter" id="nav-chapter-bottom" aria-live="polite"></span>
         <button type="button" id="next-bottom" class="btn nav-btn">下一章</button>
       </nav>
+
+      <!-- Flip-mode layer: full screen, chrome hidden until mid tap -->
+      <div class="flip-layer" id="flip-layer" aria-hidden="true">
+        <div class="flip-page" id="flip-page">
+          <div class="flip-page-inner" id="flip-page-inner"></div>
+        </div>
+        <button type="button" class="tap-zone tap-left" id="tap-left" aria-label="上一頁"></button>
+        <button type="button" class="tap-zone tap-mid" id="tap-mid" aria-label="顯示或隱藏選單"></button>
+        <button type="button" class="tap-zone tap-right" id="tap-right" aria-label="下一頁"></button>
+
+        <header class="flip-chrome flip-chrome-top" id="flip-chrome-top">
+          <button type="button" class="icon-btn" id="flip-toc" aria-label="目錄">目錄</button>
+          <div class="topbar-text">
+            <h1 class="topbar-title" id="flip-title">章節</h1>
+            <p class="topbar-sub" id="flip-cache-status"></p>
+          </div>
+          <button type="button" class="icon-btn mode-btn" id="mode-toggle-flip" aria-label="切換捲動">捲動</button>
+          <div class="font-size-controls" role="group" aria-label="字體大小">
+            <button type="button" class="icon-btn font-btn" id="flip-font-smaller" aria-label="縮小字體">A−</button>
+            <button type="button" class="icon-btn font-btn" id="flip-font-larger" aria-label="放大字體">A+</button>
+          </div>
+          <button type="button" class="icon-btn" id="flip-home" aria-label="書庫">⌂</button>
+        </header>
+
+        <footer class="flip-chrome flip-chrome-bottom" id="flip-chrome-bottom">
+          <nav class="chapter-nav">
+            <button type="button" id="flip-prev-chapter" class="btn nav-btn">上一章</button>
+            <div class="nav-meta">
+              <span class="nav-chapter" id="flip-chapter-label">第 — 章</span>
+              <span class="page-indicator" id="page-indicator">—</span>
+            </div>
+            <button type="button" id="flip-next-chapter" class="btn nav-btn">下一章</button>
+          </nav>
+        </footer>
+      </div>
     </section>
 
     <div id="toast" class="toast" hidden></div>

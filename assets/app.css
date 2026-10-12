@@ -364,3 +364,216 @@ input {
     max-width: 46rem;
   }
 }
+
+/* ---- Mode toggle + flip (content-swap, no slide) ---- */
+.mode-btn {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  min-width: 2.6rem;
+  padding: 0.35rem 0.4rem;
+}
+
+#view-reader.mode-flip {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  overflow: hidden;
+  background: var(--bg);
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  box-sizing: border-box;
+}
+
+#view-reader.mode-flip .scroll-ui,
+#view-reader.mode-flip #scroll-article,
+#view-reader.mode-flip #scroll-bottom-nav {
+  display: none !important;
+}
+
+#view-reader.mode-scroll .flip-layer {
+  display: none !important;
+}
+
+html.reading-flip,
+body.reading-flip {
+  overflow: hidden !important;
+  height: 100%;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
+.flip-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--bg);
+  touch-action: manipulation;
+}
+
+.flip-page {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  padding: 1.15rem 1.15rem 1.35rem;
+  box-sizing: border-box;
+  /* hard clip — never scroll */
+  overscroll-behavior: none;
+}
+
+.flip-page-inner {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-size: var(--body-size);
+  line-height: var(--body-lh);
+  color: var(--text);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.flip-page-inner .chapter-name {
+  margin: 0 0 0.85rem;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--accent);
+}
+
+.flip-page-inner p {
+  margin: 0 0 1.35em;
+  text-indent: 2em;
+}
+
+.flip-page-inner p:last-child {
+  margin-bottom: 0;
+}
+
+.flip-page-inner p.cont {
+  text-indent: 0; /* continuation of split paragraph */
+}
+
+.tap-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  z-index: 5;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tap-left { left: 0; width: 28%; }
+.tap-mid { left: 28%; width: 44%; }
+.tap-right { right: 0; width: 28%; }
+
+.flip-chrome {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: rgba(24, 24, 24, 0.97);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: none !important;
+}
+
+.flip-chrome-top {
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0.65rem;
+  padding-top: calc(0.55rem + env(safe-area-inset-top, 0px));
+  border-bottom: 1px solid #000;
+  box-shadow: var(--inset);
+}
+
+.flip-chrome-bottom {
+  bottom: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  border-top: 1px solid #000;
+}
+
+.flip-chrome-bottom .chapter-nav {
+  max-width: none;
+  margin: 0;
+  padding: 0.55rem 0.65rem 0.7rem;
+}
+
+#view-reader.ui-open .flip-chrome {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.nav-meta {
+  flex: 0 0 auto;
+  min-width: 6.5rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  justify-content: center;
+}
+
+.nav-meta .nav-chapter {
+  padding: 0;
+  min-width: 0;
+  font-size: 0.85rem;
+}
+
+.nav-meta .page-indicator {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Offscreen measurer for pagination — never visible */
+#flip-measure {
+  position: absolute;
+  left: -10000px;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  overflow: visible;
+  font-size: var(--body-size);
+  line-height: var(--body-lh);
+  color: var(--text);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  box-sizing: border-box;
+}
+
+#flip-measure .chapter-name {
+  margin: 0 0 0.85rem;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--accent);
+}
+
+#flip-measure p {
+  margin: 0 0 1.35em;
+  text-indent: 2em;
+}
+
+#flip-measure p.cont {
+  text-indent: 0;
+}
+
+#flip-measure p:last-child {
+  margin-bottom: 0;
+}

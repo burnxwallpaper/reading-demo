@@ -1,12 +1,13 @@
 /**
  * Mobile-first static novel reader for reading-demo archive.
  *
+ * Modes:
+ *   scroll — continuous page (default)
+ *   flip   — paginated content-swap (no slide animation, no scroll);
+ *            chrome hidden until middle tap
+ *
  * Cache window (REPLACE entire content cache on each chapter open):
- *   Let chapters[] be the book's ordered available chapters (gaps already omitted).
- *   Let i = index of the opened chapter in chapters[].
- *   Window = chapters[max(0, i - 10) .. min(len-1, i + 10)]  inclusive
- *   → current ±10 neighbors by list index, clipped to [0, len-1].
- *   Stored under one namespaced localStorage key; previous window is discarded.
+ *   Window = chapters[max(0, i - 10) .. min(len-1, i + 10)]
  */
 (function () {
   "use strict";
@@ -15,6 +16,7 @@
   const KEY_CHAPTER_CACHE = `${NS}:chapterCache`;
   const KEY_LAST_READ = (bookId) => `${NS}:lastRead:${bookId}`;
   const KEY_FONT_SIZE = `${NS}:fontSize`;
+  const KEY_READ_MODE = `${NS}:readMode`;
   const WINDOW_RADIUS = 10;
   const FONT_MIN = 14;
   const FONT_MAX = 28;
@@ -31,10 +33,16 @@
   const state = {
     books: [],
     book: null,
-    chapters: [], // { number, title, filepath, ... }
+    chapters: [],
     byNumber: new Map(),
     indexByNumber: new Map(),
     currentNumber: null,
+    paragraphs: [],
+    chapterTitle: "",
+    mode: "scroll", // scroll | flip
+    pageIndex: 0,
+    pages: [], // HTML strings
+    pagingReady: false,
   };
 
   function getFontSize() {
@@ -47,22 +55,73 @@
     const size = Math.max(FONT_MIN, Math.min(FONT_MAX, px));
     document.documentElement.style.setProperty("--body-size", `${size}px`);
     localStorage.setItem(KEY_FONT_SIZE, String(size));
-    const smaller = $("#font-smaller");
-    const larger = $("#font-larger");
-    if (smaller) smaller.disabled = size <= FONT_MIN;
-    if (larger) larger.disabled = size >= FONT_MAX;
+    ["#font-smaller", "#flip-font-smaller"].forEach((sel) => {
+      const el = $(sel);
+      if (el) el.disabled = size <= FONT_MIN;
+    });
+    ["#font-larger", "#flip-font-larger"].forEach((sel) => {
+      const el = $(sel);
+      if (el) el.disabled = size >= FONT_MAX;
+    });
     return size;
   }
 
   function bumpFontSize(delta) {
     const next = applyFontSize(getFontSize() + delta);
     toast(`字體 ${next}px`);
+    if (state.mode === "flip" && state.paragraphs.length) {
+      const ratio =
+        state.pages.length > 1 ? state.pageIndex / (state.pages.length - 1) : 0;
+      rebuildFlipPages({ ratio });
+    }
+  }
+
+  function getReadMode() {
+    const m = localStorage.getItem(KEY_READ_MODE);
+    return m === "flip" ? "flip" : "scroll";
+  }
+
+  function setReadMode(mode) {
+    state.mode = mode === "flip" ? "flip" : "scroll";
+    localStorage.setItem(KEY_READ_MODE, state.mode);
+    applyReadMode();
+  }
+
+  function applyReadMode() {
+    const reader = views.reader;
+    reader.classList.toggle("mode-flip", state.mode === "flip");
+    reader.classList.toggle("mode-scroll", state.mode === "scroll");
+    reader.classList.remove("ui-open");
+    const readingFlip = state.mode === "flip" && !reader.hidden;
+    document.documentElement.classList.toggle("reading-flip", readingFlip);
+    document.body.classList.toggle("reading-flip", readingFlip);
+    const flipLayer = $("#flip-layer");
+    if (flipLayer) flipLayer.setAttribute("aria-hidden", state.mode !== "flip");
+    const scrollBtn = $("#mode-toggle-scroll");
+    if (scrollBtn) scrollBtn.textContent = "翻頁";
+    const flipBtn = $("#mode-toggle-flip");
+    if (flipBtn) flipBtn.textContent = "捲動";
+  }
+
+  function setFlipUi(open) {
+    views.reader.classList.toggle("ui-open", !!open);
+  }
+
+  function toggleFlipUi() {
+    setFlipUi(!views.reader.classList.contains("ui-open"));
   }
 
   function showView(name) {
     Object.entries(views).forEach(([k, el]) => {
       el.hidden = k !== name;
     });
+    if (name !== "reader") {
+      document.documentElement.classList.remove("reading-flip");
+      document.body.classList.remove("reading-flip");
+      views.reader.classList.remove("ui-open");
+    } else {
+      applyReadMode();
+    }
     window.scrollTo(0, 0);
   }
 
@@ -77,7 +136,6 @@
   }
 
   function parseHash() {
-    // #/  |  #/book/:id  |  #/book/:id/chapter/:n
     const raw = (location.hash || "#/").replace(/^#/, "") || "/";
     const parts = raw.split("/").filter(Boolean);
     if (parts[0] === "book" && parts[1]) {
@@ -115,7 +173,6 @@
   }
 
   function mdToParagraphs(text) {
-    // Drop leading # title line; keep body paragraphs.
     let body = text.replace(/^\uFEFF/, "");
     const lines = body.split(/\r?\n/);
     if (lines[0] && /^#\s+/.test(lines[0])) {
@@ -152,7 +209,6 @@
   }
 
   function writeChapterCache(payload) {
-    // REPLACE — single key, overwrites previous window entirely.
     localStorage.setItem(KEY_CHAPTER_CACHE, JSON.stringify(payload));
   }
 
@@ -165,10 +221,6 @@
     localStorage.setItem(KEY_LAST_READ(bookId), String(number));
   }
 
-  /**
-   * Build index window: [i-10, i+10] clipped to available chapter list.
-   * Example: i=0 → [0..10]; i=5 → [0..15]; i=len-1 → [len-11 .. len-1] if len>11.
-   */
   function cacheWindowIndices(centerIndex, len) {
     const lo = Math.max(0, centerIndex - WINDOW_RADIUS);
     const hi = Math.min(len - 1, centerIndex + WINDOW_RADIUS);
@@ -223,12 +275,11 @@
       to: state.chapters[indices[indices.length - 1]].number,
       count: Object.keys(chapters).length,
       updatedAt: new Date().toISOString(),
-      chapters, // only this window — replaces prior cache object
+      chapters,
     };
     try {
       writeChapterCache(payload);
     } catch (err) {
-      // Quota: drop reuse attempt and store minimal; still REPLACE.
       console.warn("localStorage quota", err);
       try {
         writeChapterCache(payload);
@@ -243,6 +294,281 @@
     const cache = readChapterCache();
     if (!cache || cache.bookId !== bookId) return null;
     return cache.chapters && cache.chapters[String(number)];
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function renderParagraphs(paragraphs) {
+    return paragraphs.map((p) => `<p>${escapeHtml(p)}</p>`).join("");
+  }
+
+  function neighbor(number, delta) {
+    const i = state.indexByNumber.get(number);
+    if (i == null) return null;
+    const j = i + delta;
+    if (j < 0 || j >= state.chapters.length) return null;
+    return state.chapters[j];
+  }
+
+  function bindNav(number) {
+    const prev = neighbor(number, -1);
+    const next = neighbor(number, 1);
+    const label = `第 ${number} 章`;
+    ["#nav-chapter-top", "#nav-chapter-bottom", "#flip-chapter-label"].forEach(
+      (sel) => {
+        const el = $(sel);
+        if (el) el.textContent = label;
+      }
+    );
+    const bind = (sel, meta) => {
+      const btn = $(sel);
+      if (!btn) return;
+      btn.disabled = !meta;
+      btn.onclick = meta
+        ? () => {
+            setFlipUi(false);
+            setHash(`/book/${state.book.id}/chapter/${meta.number}`);
+          }
+        : null;
+    };
+    bind("#prev-top", prev);
+    bind("#prev-bottom", prev);
+    bind("#flip-prev-chapter", prev);
+    bind("#next-top", next);
+    bind("#next-bottom", next);
+    bind("#flip-next-chapter", next);
+  }
+
+  /* ---------- Flip pagination: measure & content-swap (no transform) ---------- */
+
+  function ensureMeasure() {
+    let el = $("#flip-measure");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "flip-measure";
+      document.body.appendChild(el);
+    }
+    return el;
+  }
+
+  function pageOverflows(measure, maxH) {
+    // Use ceil to avoid subpixel false negatives that clip glyphs.
+    return measure.scrollHeight > maxH + 0.5;
+  }
+
+  /**
+   * Build pages by packing blocks into a fixed-height measure box.
+   * Long paragraphs are binary-split so nothing is clipped.
+   */
+  function buildFlipPages(title, paragraphs, pageWidth, pageHeight) {
+    const measure = ensureMeasure();
+    measure.style.width = `${pageWidth}px`;
+    measure.innerHTML = "";
+
+    const pages = [];
+    let firstOnPage = true;
+    let needTitle = true;
+
+    function startPage() {
+      measure.innerHTML = "";
+      firstOnPage = true;
+      if (needTitle) {
+        const h = document.createElement("h2");
+        h.className = "chapter-name";
+        h.textContent = title;
+        measure.appendChild(h);
+        needTitle = false;
+        // If title alone overflows (tiny screen), still keep it on page 1.
+        firstOnPage = false;
+      }
+    }
+
+    function snapshotPage() {
+      pages.push(measure.innerHTML);
+    }
+
+    function makeP(text, cont) {
+      const p = document.createElement("p");
+      if (cont) p.className = "cont";
+      p.textContent = text;
+      return p;
+    }
+
+    /** How many chars of `text` fit when appended as a (cont?) paragraph. */
+    function fitChars(text, cont) {
+      if (!text) return 0;
+      const p = makeP("", cont);
+      measure.appendChild(p);
+      if (!pageOverflows(measure, pageHeight)) {
+        // whole empty p fits; binary search full text
+        let lo = 0;
+        let hi = text.length;
+        while (lo < hi) {
+          const mid = Math.ceil((lo + hi) / 2);
+          p.textContent = text.slice(0, mid);
+          if (!pageOverflows(measure, pageHeight)) lo = mid;
+          else hi = mid - 1;
+        }
+        measure.removeChild(p);
+        return lo;
+      }
+      // even empty paragraph doesn't fit
+      measure.removeChild(p);
+      return -1;
+    }
+
+    function appendFitted(text, cont) {
+      const n = fitChars(text, cont);
+      if (n < 0) return { took: 0, fitted: false, emptyFail: true };
+      if (n === 0) return { took: 0, fitted: false, emptyFail: false };
+      const p = makeP(text.slice(0, n), cont);
+      measure.appendChild(p);
+      return { took: n, fitted: n === text.length, emptyFail: false };
+    }
+
+    startPage();
+
+    for (let pi = 0; pi < paragraphs.length; pi++) {
+      let rest = paragraphs[pi];
+      let cont = false;
+
+      while (rest.length) {
+        const beforeLen = measure.childNodes.length;
+        const r = appendFitted(rest, cont);
+
+        if (r.emptyFail || (r.took === 0 && !r.fitted)) {
+          // Nothing fits on this page — commit page and start new (unless empty).
+          if (beforeLen === 0 && !measure.querySelector("p, .chapter-name")) {
+            // pathological: pageHeight too small; force one char to avoid infinite loop
+            const p = makeP(rest.slice(0, 1), cont);
+            measure.appendChild(p);
+            rest = rest.slice(1);
+            cont = true;
+            snapshotPage();
+            startPage();
+            continue;
+          }
+          snapshotPage();
+          startPage();
+          cont = cont || false;
+          // retry same rest on new page
+          continue;
+        }
+
+        rest = rest.slice(r.took);
+        if (rest.length) {
+          // Partial paragraph — new page for remainder (continuation, no indent)
+          snapshotPage();
+          startPage();
+          cont = true;
+        } else {
+          cont = false;
+          firstOnPage = false;
+        }
+      }
+    }
+
+    if (measure.innerHTML.trim()) snapshotPage();
+    if (!pages.length) pages.push(`<h2 class="chapter-name">${escapeHtml(title)}</h2>`);
+    return pages;
+  }
+
+  function updatePageIndicator() {
+    const el = $("#page-indicator");
+    if (!el) return;
+    if (!state.pagingReady || !state.pages.length) {
+      el.textContent = "分頁中…";
+      return;
+    }
+    el.textContent = `第 ${state.pageIndex + 1} / ${state.pages.length} 頁`;
+  }
+
+  function paintFlipPage(index) {
+    const max = Math.max(0, state.pages.length - 1);
+    const i = Math.max(0, Math.min(max, index));
+    state.pageIndex = i;
+    const inner = $("#flip-page-inner");
+    if (inner) inner.innerHTML = state.pages[i] || "";
+    updatePageIndicator();
+  }
+
+  function rebuildFlipPages({ ratio = null, page = null } = {}) {
+    const box = $("#flip-page");
+    if (!box || state.mode !== "flip") return;
+    const style = getComputedStyle(box);
+    const padX =
+      (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+    const padY =
+      (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+    const pageWidth = Math.max(1, Math.floor(box.clientWidth - padX));
+    const pageHeight = Math.max(1, Math.floor(box.clientHeight - padY));
+
+    state.pagingReady = false;
+    updatePageIndicator();
+    state.pages = buildFlipPages(
+      state.chapterTitle,
+      state.paragraphs,
+      pageWidth,
+      pageHeight
+    );
+    state.pagingReady = true;
+
+    let target = 0;
+    if (page != null && Number.isFinite(page)) target = page;
+    else if (ratio != null && Number.isFinite(ratio) && state.pages.length > 1) {
+      target = Math.round(ratio * (state.pages.length - 1));
+    }
+    paintFlipPage(target);
+  }
+
+  function turnPage(delta) {
+    if (state.mode !== "flip" || !state.pagingReady) return;
+    setFlipUi(false);
+    const next = state.pageIndex + delta;
+    if (next >= 0 && next < state.pages.length) {
+      paintFlipPage(next);
+      return;
+    }
+    if (delta > 0) {
+      const meta = neighbor(state.currentNumber, 1);
+      if (meta) {
+        toast(`下一章 · 第 ${meta.number} 章`);
+        setHash(`/book/${state.book.id}/chapter/${meta.number}`);
+      } else toast("已是最後一章");
+    } else {
+      const meta = neighbor(state.currentNumber, -1);
+      if (meta) {
+        toast(`上一章 · 第 ${meta.number} 章`);
+        setHash(`/book/${state.book.id}/chapter/${meta.number}`);
+      } else toast("已是第一章");
+    }
+  }
+
+  async function switchMode(next) {
+    const prev = state.mode;
+    if (next === prev) return;
+    setReadMode(next);
+    if (!views.reader.hidden && state.paragraphs.length) {
+      if (next === "flip") {
+        await new Promise((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(r))
+        );
+        rebuildFlipPages({ page: 0 });
+        toast("翻頁模式");
+      } else {
+        // restore scroll content
+        $("#chapter-name").textContent = state.chapterTitle;
+        $("#chapter-content").innerHTML = renderParagraphs(state.paragraphs);
+        window.scrollTo(0, 0);
+        toast("捲動模式");
+      }
+    }
   }
 
   function renderHome() {
@@ -319,51 +645,8 @@
     list.appendChild(frag);
     document.title = `目錄 · ${state.book.title}`;
 
-    // Scroll current into view
     const cur = list.querySelector(".chapter-item.current");
     if (cur) cur.scrollIntoView({ block: "center" });
-  }
-
-  function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  }
-
-  function renderParagraphs(paragraphs) {
-    return paragraphs.map((p) => `<p>${escapeHtml(p)}</p>`).join("");
-  }
-
-  function neighbor(number, delta) {
-    const i = state.indexByNumber.get(number);
-    if (i == null) return null;
-    const j = i + delta;
-    if (j < 0 || j >= state.chapters.length) return null;
-    return state.chapters[j];
-  }
-
-  function bindNav(number) {
-    const prev = neighbor(number, -1);
-    const next = neighbor(number, 1);
-    const label = `第 ${number} 章`;
-    ["#nav-chapter-top", "#nav-chapter-bottom"].forEach((sel) => {
-      const el = $(sel);
-      if (el) el.textContent = label;
-    });
-    [
-      ["#prev-top", prev],
-      ["#prev-bottom", prev],
-      ["#next-top", next],
-      ["#next-bottom", next],
-    ].forEach(([sel, meta]) => {
-      const btn = $(sel);
-      btn.disabled = !meta;
-      btn.onclick = meta
-        ? () => setHash(`/book/${state.book.id}/chapter/${meta.number}`)
-        : null;
-    });
   }
 
   async function renderReader(number) {
@@ -376,44 +659,61 @@
       return;
     }
 
+    state.chapterTitle = meta.title;
     $("#chapter-name").textContent = meta.title;
     $("#reader-title").textContent = state.book.title;
+    $("#flip-title").textContent = state.book.title;
     $("#chapter-content").innerHTML = `<p style="color:var(--muted)">載入中…</p>`;
+    $("#flip-page-inner").innerHTML = `<p style="color:var(--muted)">載入中…</p>`;
     bindNav(number);
     setLastRead(state.book.id, number);
     document.title = `${meta.title} · ${state.book.title}`;
+    setFlipUi(false);
+    applyReadMode();
 
-    // Prefer cache for instant paint, then refresh window in background.
     let paragraphs;
     const hit = getCachedChapter(state.book.id, number);
     if (hit && hit.body) {
       paragraphs = hit.body.split(/\n\s*\n/).filter(Boolean);
-      $("#chapter-content").innerHTML = renderParagraphs(paragraphs);
     } else {
       try {
         const loaded = await fetchChapterText(meta);
         paragraphs = loaded.paragraphs;
-        $("#chapter-content").innerHTML = renderParagraphs(paragraphs);
       } catch (err) {
-        $("#chapter-content").innerHTML = `<p>載入失敗：${escapeHtml(err.message)}</p>`;
+        const msg = `<p>載入失敗：${escapeHtml(err.message)}</p>`;
+        $("#chapter-content").innerHTML = msg;
+        $("#flip-page-inner").innerHTML = msg;
         return;
       }
     }
+    state.paragraphs = paragraphs;
 
-    // Auto-cache: REPLACE window around current chapter (±10 by list index).
-    const status = $("#reader-cache-status");
-    status.textContent = "緩存更新中…";
+    $("#chapter-content").innerHTML = renderParagraphs(paragraphs);
+
+    if (state.mode === "flip") {
+      await new Promise((r) =>
+        requestAnimationFrame(() => requestAnimationFrame(r))
+      );
+      rebuildFlipPages({ page: 0 });
+    }
+
+    const statusText = (t) => {
+      const a = $("#reader-cache-status");
+      const b = $("#flip-cache-status");
+      if (a) a.textContent = t;
+      if (b) b.textContent = t;
+    };
+    statusText("緩存更新中…");
     try {
       const payload = await refreshChapterCache(number);
       if (payload) {
-        status.textContent = `已緩存 第${payload.from}–${payload.to}章（${payload.count}章 · 整包替換）`;
-      } else {
-        status.textContent = "";
-      }
-      // If we painted from network first, ensure cache has this chapter for next time — already in refresh.
+        statusText(
+          `已緩存 第${payload.from}–${payload.to}章（${payload.count}章 · 整包替換）`
+        );
+      } else statusText("");
     } catch (err) {
       console.warn(err);
-      status.textContent = "緩存失敗（仍可線上閱讀）";
+      statusText("緩存失敗（仍可線上閱讀）");
     }
   }
 
@@ -461,12 +761,17 @@
     }
   }
 
-  // TOC controls
+  // Controls
   $("#toc-back").addEventListener("click", () => setHash("/"));
   $("#reader-toc").addEventListener("click", () => {
     if (state.book) setHash(`/book/${state.book.id}`);
   });
   $("#reader-home").addEventListener("click", () => setHash("/"));
+  $("#flip-toc").addEventListener("click", () => {
+    if (state.book) setHash(`/book/${state.book.id}`);
+  });
+  $("#flip-home").addEventListener("click", () => setHash("/"));
+
   $("#toc-search").addEventListener("input", () => {
     if (state.book) renderToc();
   });
@@ -476,7 +781,6 @@
     if (state.byNumber.has(n)) {
       setHash(`/book/${state.book.id}/chapter/${n}`);
     } else {
-      // nearest available
       const nums = state.chapters.map((c) => c.number);
       let best = nums[0];
       let bestDist = Math.abs(best - n);
@@ -494,7 +798,55 @@
 
   $("#font-smaller").addEventListener("click", () => bumpFontSize(-FONT_STEP));
   $("#font-larger").addEventListener("click", () => bumpFontSize(FONT_STEP));
+  $("#flip-font-smaller").addEventListener("click", () =>
+    bumpFontSize(-FONT_STEP)
+  );
+  $("#flip-font-larger").addEventListener("click", () =>
+    bumpFontSize(FONT_STEP)
+  );
   applyFontSize(getFontSize());
+
+  $("#mode-toggle-scroll").addEventListener("click", () => switchMode("flip"));
+  $("#mode-toggle-flip").addEventListener("click", () => switchMode("scroll"));
+
+  $("#tap-left").addEventListener("click", (e) => {
+    e.preventDefault();
+    turnPage(-1);
+  });
+  $("#tap-mid").addEventListener("click", (e) => {
+    e.preventDefault();
+    toggleFlipUi();
+  });
+  $("#tap-right").addEventListener("click", (e) => {
+    e.preventDefault();
+    turnPage(1);
+  });
+
+  document.addEventListener(
+    "touchmove",
+    (e) => {
+      if (!document.body.classList.contains("reading-flip")) return;
+      if (e.target.closest && e.target.closest(".flip-chrome")) return;
+      e.preventDefault();
+    },
+    { passive: false }
+  );
+
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    if (state.mode !== "flip" || views.reader.hidden) return;
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      const ratio =
+        state.pages.length > 1
+          ? state.pageIndex / (state.pages.length - 1)
+          : 0;
+      rebuildFlipPages({ ratio });
+    }, 120);
+  });
+
+  state.mode = getReadMode();
+  applyReadMode();
 
   window.addEventListener("hashchange", route);
   route();
