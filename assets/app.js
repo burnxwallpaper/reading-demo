@@ -73,7 +73,23 @@
     Object.entries(views).forEach(([k, el]) => {
       el.hidden = k !== name;
     });
+    const reading = name === "reader";
+    document.documentElement.classList.toggle("reading", reading);
+    document.body.classList.toggle("reading", reading);
+    if (reading) {
+      views.reader.classList.remove("ui-open");
+    } else {
+      views.reader.classList.remove("ui-open");
+    }
     window.scrollTo(0, 0);
+  }
+
+  function setReaderUi(open) {
+    views.reader.classList.toggle("ui-open", !!open);
+  }
+
+  function toggleReaderUi() {
+    setReaderUi(!views.reader.classList.contains("ui-open"));
   }
 
   function toast(msg) {
@@ -358,19 +374,23 @@
     const prev = neighbor(number, -1);
     const next = neighbor(number, 1);
     const label = `第 ${number} 章`;
-    ["#nav-chapter-top", "#nav-chapter-bottom"].forEach((sel) => {
-      const el = $(sel);
-      if (el) el.textContent = label;
-    });
+    const chap = $("#nav-chapter-bottom");
+    if (chap) chap.textContent = label;
     const btn = $("#prev-bottom");
     btn.disabled = !prev;
     btn.onclick = prev
-      ? () => setHash(`/book/${state.book.id}/chapter/${prev.number}`)
+      ? () => {
+          setReaderUi(false);
+          setHash(`/book/${state.book.id}/chapter/${prev.number}`);
+        }
       : null;
     const btnN = $("#next-bottom");
     btnN.disabled = !next;
     btnN.onclick = next
-      ? () => setHash(`/book/${state.book.id}/chapter/${next.number}`)
+      ? () => {
+          setReaderUi(false);
+          setHash(`/book/${state.book.id}/chapter/${next.number}`);
+        }
       : null;
   }
 
@@ -384,46 +404,52 @@
     el.textContent = `第 ${state.pageIndex + 1} / ${state.pageCount} 頁`;
   }
 
-  function goToPage(index, { animate = true } = {}) {
+  function goToPage(index) {
     const flow = $("#pager-flow");
-    const clip = $("#pager-clip");
-    if (!flow || !clip || !state.pageWidth) return;
+    if (!flow || !state.pageWidth) return;
     const max = Math.max(0, state.pageCount - 1);
     const i = Math.max(0, Math.min(max, index));
     state.pageIndex = i;
-    if (!animate) {
-      const prev = flow.style.transition;
-      flow.style.transition = "none";
-      flow.style.transform = `translate3d(${-i * state.pageWidth}px, 0, 0)`;
-      // force reflow then restore
-      void flow.offsetWidth;
-      flow.style.transition = prev || "";
-    } else {
-      flow.style.transform = `translate3d(${-i * state.pageWidth}px, 0, 0)`;
-    }
+    flow.style.transition = "none";
+    flow.style.transform = `translate3d(${-i * state.pageWidth}px, 0, 0)`;
     updatePageIndicator();
   }
 
   function layoutPager({ ratio = null, page = null } = {}) {
     const clip = $("#pager-clip");
     const flow = $("#pager-flow");
+    const content = $("#chapter-content");
     if (!clip || !flow || views.reader.hidden) return;
 
+    // Full content box size (padding already on clip).
     const w = Math.max(1, Math.floor(clip.clientWidth));
-    const h = Math.max(1, Math.floor(clip.clientHeight));
+    let h = Math.max(1, Math.floor(clip.clientHeight));
+
+    // Snap height to whole line boxes so glyphs aren't clipped at page bottom.
+    const cs = getComputedStyle(content || flow);
+    let lh = parseFloat(cs.lineHeight);
+    if (!Number.isFinite(lh) || lh <= 0) {
+      const fs = parseFloat(cs.fontSize) || 18;
+      lh = fs * 1.8;
+    }
+    // Leave a tiny safety gap (< 1 line) after snapping.
+    const lines = Math.max(1, Math.floor((h - 2) / lh));
+    h = Math.max(1, Math.floor(lines * lh));
+
     state.pageWidth = w;
 
     flow.style.width = `${w}px`;
     flow.style.height = `${h}px`;
+    flow.style.maxHeight = `${h}px`;
     flow.style.columnWidth = `${w}px`;
     flow.style.columnGap = "0px";
     flow.style.columnFill = "auto";
     flow.style.transition = "none";
     flow.style.transform = "translate3d(0, 0, 0)";
 
-    // Measure columns created to the right.
     void flow.offsetWidth;
-    const pages = Math.max(1, Math.ceil(flow.scrollWidth / w - 0.001));
+    // Use round to avoid phantom empty last page from subpixel scrollWidth.
+    const pages = Math.max(1, Math.round(flow.scrollWidth / w));
     state.pageCount = pages;
     state.pagingReady = true;
 
@@ -433,12 +459,12 @@
     } else if (ratio != null && Number.isFinite(ratio) && pages > 1) {
       target = Math.round(ratio * (pages - 1));
     }
-    flow.style.transition = "";
-    goToPage(target, { animate: false });
+    goToPage(target);
   }
 
   function turnPage(delta) {
     if (!state.pagingReady) return;
+    setReaderUi(false);
     const next = state.pageIndex + delta;
     if (next >= 0 && next < state.pageCount) {
       goToPage(next);
@@ -466,6 +492,7 @@
 
   async function renderReader(number) {
     showView("reader");
+    setReaderUi(false);
     state.currentNumber = number;
     const meta = state.byNumber.get(number);
     if (!meta) {
@@ -603,9 +630,26 @@
   $("#font-larger").addEventListener("click", () => bumpFontSize(FONT_STEP));
   applyFontSize(getFontSize());
 
+  // Kill scroll / rubber-band while reading.
+  document.addEventListener(
+    "touchmove",
+    (e) => {
+      if (!document.body.classList.contains("reading")) return;
+      // allow scrolling inside chrome panels if they ever overflow
+      const chrome = e.target.closest && e.target.closest(".reader-chrome");
+      if (chrome) return;
+      e.preventDefault();
+    },
+    { passive: false }
+  );
+
   $("#tap-left").addEventListener("click", (e) => {
     e.preventDefault();
     turnPage(-1);
+  });
+  $("#tap-mid").addEventListener("click", (e) => {
+    e.preventDefault();
+    toggleReaderUi();
   });
   $("#tap-right").addEventListener("click", (e) => {
     e.preventDefault();

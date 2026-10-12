@@ -354,71 +354,69 @@ input {
 }
 
 
-/* ---- Paginated reader ---- */
+
+
+/* ---- Immersive paginated reader (Qidian-style) ---- */
+html.reading,
+body.reading {
+  overflow: hidden !important;
+  height: 100%;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
 .reader-view {
-  display: flex;
-  flex-direction: column;
-  height: 100dvh;
-  height: 100vh;
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: block;
   overflow: hidden;
   background: var(--bg);
-}
-
-.reader-status {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.35rem 0.85rem;
-  font-size: 0.8rem;
-  color: var(--muted);
-  border-bottom: 1px solid #292929;
-  background: var(--bg);
-  flex-shrink: 0;
-}
-
-.reader-status #nav-chapter-top {
-  color: var(--accent);
-  font-weight: 700;
-}
-
-.reader-status #page-indicator {
-  font-variant-numeric: tabular-nums;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  box-sizing: border-box;
 }
 
 .pager-shell {
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
-  max-width: 46rem;
+  position: absolute;
+  inset: 0;
+  max-width: none;
   width: 100%;
-  margin: 0 auto;
+  margin: 0;
+  overflow: hidden;
 }
 
 .pager-clip {
-  height: 100%;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
-  padding: 0.55rem 0.75rem 0.35rem;
+  padding: 1.1rem 1.1rem 1.25rem;
   box-sizing: border-box;
+  /* no scroll ever */
+  overscroll-behavior: none;
+  touch-action: manipulation;
 }
 
 .pager-flow {
   height: 100%;
   column-fill: auto;
   column-gap: 0;
-  will-change: transform;
-  transition: transform 0.18s ease-out;
+  /* no animation */
+  transition: none !important;
+  transform: translate3d(0, 0, 0);
+  overflow: visible;
 }
 
 .pager-flow .chapter-name {
-  margin: 0 0 0.65rem;
-  padding: 0.65rem 0.75rem;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  box-shadow: var(--inset);
-  font-size: 1.05rem;
+  margin: 0 0 0.85rem;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  font-size: 1.15rem;
   font-weight: 700;
-  line-height: 1.4;
+  line-height: 1.5;
+  color: var(--accent);
   break-inside: avoid;
   break-after: avoid;
 }
@@ -432,13 +430,16 @@ input {
   font-size: var(--body-size);
   line-height: var(--body-lh);
   word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .pager-flow .chapter-content p {
-  margin: 0 0 1.85rem;
+  margin: 0 0 1.35em;
   text-indent: 2em;
-  orphans: 2;
-  widows: 2;
+  /* allow breaks so lines aren't clipped mid-glyph awkwardly */
+  break-inside: auto;
+  orphans: 1;
+  widows: 1;
 }
 
 .pager-flow .chapter-content p:last-child {
@@ -449,7 +450,6 @@ input {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 42%;
   border: 0;
   padding: 0;
   margin: 0;
@@ -461,22 +461,92 @@ input {
 
 .tap-left {
   left: 0;
+  width: 28%;
+}
+
+.tap-mid {
+  left: 28%;
+  width: 44%;
 }
 
 .tap-right {
   right: 0;
+  width: 28%;
 }
 
-.reader-view .bottom-nav {
-  flex-shrink: 0;
-  padding-top: 0.35rem;
-  padding-bottom: calc(0.65rem + var(--safe-b));
-  border-top: 1px solid #292929;
-  background: var(--bg);
+/* Chrome overlays — hidden by default */
+.reader-chrome {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: rgba(24, 24, 24, 0.96);
+  border-color: #000;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: none;
 }
 
-.reader-view .top-nav {
-  display: none;
+.reader-chrome-top {
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  padding-top: calc(0.55rem + env(safe-area-inset-top, 0px));
+  border-bottom: 1px solid #000;
+  box-shadow: var(--inset);
+}
+
+.reader-chrome-bottom {
+  bottom: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  border-top: 1px solid #000;
+}
+
+.reader-view.ui-open .reader-chrome {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.reader-view.ui-open .tap-zone {
+  /* keep page turns working; chrome sits above mid/edges where it overlaps */
+  z-index: 5;
+}
+
+.reader-chrome-bottom .chapter-nav {
+  max-width: none;
+  margin: 0;
+  padding: 0.55rem 0.65rem 0.7rem;
+}
+
+.nav-meta {
+  flex: 0 0 auto;
+  min-width: 6.5rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  justify-content: center;
+}
+
+.nav-meta .nav-chapter {
+  padding: 0;
+  min-width: 0;
+  font-size: 0.85rem;
+}
+
+.nav-meta .page-indicator {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.reader-view .top-nav,
+.reader-status {
+  display: none !important;
 }
 
 @media (min-width: 768px) {

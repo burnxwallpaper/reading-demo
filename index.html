@@ -42,9 +42,21 @@
       </main>
     </section>
 
-    <!-- Reader: paginated, tap left/right to flip pages -->
+    <!-- Reader: immersive Qidian-style, tap mid for UI -->
     <section id="view-reader" class="view reader-view" hidden>
-      <header class="topbar reader-topbar">
+      <div class="pager-shell" id="pager-shell">
+        <div class="pager-clip" id="pager-clip">
+          <div class="pager-flow" id="pager-flow">
+            <h2 class="chapter-name" id="chapter-name"></h2>
+            <div class="chapter-content" id="chapter-content"></div>
+          </div>
+        </div>
+        <button type="button" class="tap-zone tap-left" id="tap-left" aria-label="上一頁"></button>
+        <button type="button" class="tap-zone tap-mid" id="tap-mid" aria-label="顯示或隱藏選單"></button>
+        <button type="button" class="tap-zone tap-right" id="tap-right" aria-label="下一頁"></button>
+      </div>
+
+      <header class="reader-chrome reader-chrome-top" id="reader-chrome-top">
         <button type="button" class="icon-btn" id="reader-toc" aria-label="目錄">目錄</button>
         <div class="topbar-text">
           <h1 class="topbar-title" id="reader-title">章節</h1>
@@ -56,25 +68,17 @@
         </div>
         <button type="button" class="icon-btn" id="reader-home" aria-label="書庫">⌂</button>
       </header>
-      <div class="reader-status" aria-live="polite">
-        <span id="nav-chapter-top">第 — 章</span>
-        <span id="page-indicator">—</span>
-      </div>
-      <div class="pager-shell" id="pager-shell">
-        <div class="pager-clip" id="pager-clip">
-          <div class="pager-flow" id="pager-flow">
-            <h2 class="chapter-name" id="chapter-name"></h2>
-            <div class="chapter-content" id="chapter-content"></div>
+
+      <footer class="reader-chrome reader-chrome-bottom" id="reader-chrome-bottom">
+        <nav class="chapter-nav bottom-nav">
+          <button type="button" id="prev-bottom" class="btn nav-btn">上一章</button>
+          <div class="nav-meta">
+            <span class="nav-chapter" id="nav-chapter-bottom">第 — 章</span>
+            <span class="page-indicator" id="page-indicator">—</span>
           </div>
-        </div>
-        <button type="button" class="tap-zone tap-left" id="tap-left" aria-label="上一頁"></button>
-        <button type="button" class="tap-zone tap-right" id="tap-right" aria-label="下一頁"></button>
-      </div>
-      <nav class="chapter-nav bottom-nav">
-        <button type="button" id="prev-bottom" class="btn nav-btn">上一章</button>
-        <span class="nav-chapter" id="nav-chapter-bottom" aria-live="polite"></span>
-        <button type="button" id="next-bottom" class="btn nav-btn">下一章</button>
-      </nav>
+          <button type="button" id="next-bottom" class="btn nav-btn">下一章</button>
+        </nav>
+      </footer>
     </section>
 
     <div id="toast" class="toast" hidden></div>
