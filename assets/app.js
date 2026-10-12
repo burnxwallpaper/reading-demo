@@ -2,9 +2,9 @@
  * Mobile-first static novel reader for reading-demo archive.
  *
  * Modes:
- *   scroll — continuous page (default)
- *   flip   — paginated content-swap (no slide animation, no scroll);
+ *   flip   — paginated content-swap (default; no slide animation, no scroll);
  *            chrome hidden until middle tap
+ *   scroll — continuous page
  *
  * Prefs (font, mode, last-read) use sessionStorage.
  */
@@ -37,7 +37,7 @@
     currentNumber: null,
     paragraphs: [],
     chapterTitle: "",
-    mode: "scroll", // scroll | flip
+    mode: "flip", // flip | scroll
     pageIndex: 0,
     pages: [], // HTML strings
     pagingReady: false,
@@ -76,7 +76,7 @@
 
   function getReadMode() {
     const m = store.getItem(KEY_READ_MODE);
-    return m === "flip" ? "flip" : "scroll";
+    return m === "scroll" ? "scroll" : "flip";
   }
 
   function setReadMode(mode) {
