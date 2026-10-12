@@ -320,6 +320,11 @@
   function bindNav(number) {
     const prev = neighbor(number, -1);
     const next = neighbor(number, 1);
+    const label = `第 ${number} 章`;
+    ["#nav-chapter-top", "#nav-chapter-bottom"].forEach((sel) => {
+      const el = $(sel);
+      if (el) el.textContent = label;
+    });
     [
       ["#prev-top", prev],
       ["#prev-bottom", prev],

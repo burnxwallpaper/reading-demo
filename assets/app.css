@@ -265,6 +265,18 @@ input {
   padding: 0.7rem 0.5rem;
 }
 
+.nav-chapter {
+  flex: 0 0 auto;
+  min-width: 5.5rem;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1.4;
+  padding: 0.7rem 0.35rem;
+  white-space: nowrap;
+}
+
 .chapter-detail {
   max-width: 42rem;
   margin: 0 auto 1rem;
