@@ -35,10 +35,6 @@
     byNumber: new Map(),
     indexByNumber: new Map(),
     currentNumber: null,
-    pageIndex: 0,
-    pageCount: 1,
-    pageWidth: 0,
-    pagingReady: false,
   };
 
   function getFontSize() {
@@ -61,35 +57,13 @@
   function bumpFontSize(delta) {
     const next = applyFontSize(getFontSize() + delta);
     toast(`字體 ${next}px`);
-    if (!views.reader.hidden) {
-      // Keep approximate reading position across reflow.
-      const ratio =
-        state.pageCount > 1 ? state.pageIndex / (state.pageCount - 1) : 0;
-      requestAnimationFrame(() => layoutPager({ ratio }));
-    }
   }
 
   function showView(name) {
     Object.entries(views).forEach(([k, el]) => {
       el.hidden = k !== name;
     });
-    const reading = name === "reader";
-    document.documentElement.classList.toggle("reading", reading);
-    document.body.classList.toggle("reading", reading);
-    if (reading) {
-      views.reader.classList.remove("ui-open");
-    } else {
-      views.reader.classList.remove("ui-open");
-    }
     window.scrollTo(0, 0);
-  }
-
-  function setReaderUi(open) {
-    views.reader.classList.toggle("ui-open", !!open);
-  }
-
-  function toggleReaderUi() {
-    setReaderUi(!views.reader.classList.contains("ui-open"));
   }
 
   function toast(msg) {
@@ -374,125 +348,26 @@
     const prev = neighbor(number, -1);
     const next = neighbor(number, 1);
     const label = `第 ${number} 章`;
-    const chap = $("#nav-chapter-bottom");
-    if (chap) chap.textContent = label;
-    const btn = $("#prev-bottom");
-    btn.disabled = !prev;
-    btn.onclick = prev
-      ? () => {
-          setReaderUi(false);
-          setHash(`/book/${state.book.id}/chapter/${prev.number}`);
-        }
-      : null;
-    const btnN = $("#next-bottom");
-    btnN.disabled = !next;
-    btnN.onclick = next
-      ? () => {
-          setReaderUi(false);
-          setHash(`/book/${state.book.id}/chapter/${next.number}`);
-        }
-      : null;
-  }
-
-  function updatePageIndicator() {
-    const el = $("#page-indicator");
-    if (!el) return;
-    if (!state.pagingReady) {
-      el.textContent = "分頁中…";
-      return;
-    }
-    el.textContent = `第 ${state.pageIndex + 1} / ${state.pageCount} 頁`;
-  }
-
-  function goToPage(index) {
-    const flow = $("#pager-flow");
-    if (!flow || !state.pageWidth) return;
-    const max = Math.max(0, state.pageCount - 1);
-    const i = Math.max(0, Math.min(max, index));
-    state.pageIndex = i;
-    flow.style.transition = "none";
-    flow.style.transform = `translate3d(${-i * state.pageWidth}px, 0, 0)`;
-    updatePageIndicator();
-  }
-
-  function layoutPager({ ratio = null, page = null } = {}) {
-    const clip = $("#pager-clip");
-    const flow = $("#pager-flow");
-    const content = $("#chapter-content");
-    if (!clip || !flow || views.reader.hidden) return;
-
-    // Full content box size (padding already on clip).
-    const w = Math.max(1, Math.floor(clip.clientWidth));
-    let h = Math.max(1, Math.floor(clip.clientHeight));
-
-    // Snap height to whole line boxes so glyphs aren't clipped at page bottom.
-    const cs = getComputedStyle(content || flow);
-    let lh = parseFloat(cs.lineHeight);
-    if (!Number.isFinite(lh) || lh <= 0) {
-      const fs = parseFloat(cs.fontSize) || 18;
-      lh = fs * 1.8;
-    }
-    // Leave a tiny safety gap (< 1 line) after snapping.
-    const lines = Math.max(1, Math.floor((h - 2) / lh));
-    h = Math.max(1, Math.floor(lines * lh));
-
-    state.pageWidth = w;
-
-    flow.style.width = `${w}px`;
-    flow.style.height = `${h}px`;
-    flow.style.maxHeight = `${h}px`;
-    flow.style.columnWidth = `${w}px`;
-    flow.style.columnGap = "0px";
-    flow.style.columnFill = "auto";
-    flow.style.transition = "none";
-    flow.style.transform = "translate3d(0, 0, 0)";
-
-    void flow.offsetWidth;
-    // Use round to avoid phantom empty last page from subpixel scrollWidth.
-    const pages = Math.max(1, Math.round(flow.scrollWidth / w));
-    state.pageCount = pages;
-    state.pagingReady = true;
-
-    let target = 0;
-    if (page != null && Number.isFinite(page)) {
-      target = page;
-    } else if (ratio != null && Number.isFinite(ratio) && pages > 1) {
-      target = Math.round(ratio * (pages - 1));
-    }
-    goToPage(target);
-  }
-
-  function turnPage(delta) {
-    if (!state.pagingReady) return;
-    setReaderUi(false);
-    const next = state.pageIndex + delta;
-    if (next >= 0 && next < state.pageCount) {
-      goToPage(next);
-      return;
-    }
-    // Cross chapter at ends.
-    if (delta > 0) {
-      const meta = neighbor(state.currentNumber, 1);
-      if (meta) {
-        toast(`下一章 · 第 ${meta.number} 章`);
-        setHash(`/book/${state.book.id}/chapter/${meta.number}`);
-      } else {
-        toast("已是最後一章");
-      }
-    } else {
-      const meta = neighbor(state.currentNumber, -1);
-      if (meta) {
-        toast(`上一章 · 第 ${meta.number} 章`);
-        setHash(`/book/${state.book.id}/chapter/${meta.number}`);
-      } else {
-        toast("已是第一章");
-      }
-    }
+    ["#nav-chapter-top", "#nav-chapter-bottom"].forEach((sel) => {
+      const el = $(sel);
+      if (el) el.textContent = label;
+    });
+    [
+      ["#prev-top", prev],
+      ["#prev-bottom", prev],
+      ["#next-top", next],
+      ["#next-bottom", next],
+    ].forEach(([sel, meta]) => {
+      const btn = $(sel);
+      btn.disabled = !meta;
+      btn.onclick = meta
+        ? () => setHash(`/book/${state.book.id}/chapter/${meta.number}`)
+        : null;
+    });
   }
 
   async function renderReader(number) {
     showView("reader");
-    setReaderUi(false);
     state.currentNumber = number;
     const meta = state.byNumber.get(number);
     if (!meta) {
@@ -511,11 +386,6 @@
     // Prefer cache for instant paint, then refresh window in background.
     let paragraphs;
     const hit = getCachedChapter(state.book.id, number);
-    state.pagingReady = false;
-    state.pageIndex = 0;
-    state.pageCount = 1;
-    updatePageIndicator();
-
     if (hit && hit.body) {
       paragraphs = hit.body.split(/\n\s*\n/).filter(Boolean);
       $("#chapter-content").innerHTML = renderParagraphs(paragraphs);
@@ -529,10 +399,6 @@
         return;
       }
     }
-
-    // Wait for layout (reader flex height) then paginate.
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    layoutPager({ page: 0 });
 
     // Auto-cache: REPLACE window around current chapter (±10 by list index).
     const status = $("#reader-cache-status");
@@ -629,43 +495,6 @@
   $("#font-smaller").addEventListener("click", () => bumpFontSize(-FONT_STEP));
   $("#font-larger").addEventListener("click", () => bumpFontSize(FONT_STEP));
   applyFontSize(getFontSize());
-
-  // Kill scroll / rubber-band while reading.
-  document.addEventListener(
-    "touchmove",
-    (e) => {
-      if (!document.body.classList.contains("reading")) return;
-      // allow scrolling inside chrome panels if they ever overflow
-      const chrome = e.target.closest && e.target.closest(".reader-chrome");
-      if (chrome) return;
-      e.preventDefault();
-    },
-    { passive: false }
-  );
-
-  $("#tap-left").addEventListener("click", (e) => {
-    e.preventDefault();
-    turnPage(-1);
-  });
-  $("#tap-mid").addEventListener("click", (e) => {
-    e.preventDefault();
-    toggleReaderUi();
-  });
-  $("#tap-right").addEventListener("click", (e) => {
-    e.preventDefault();
-    turnPage(1);
-  });
-
-  let resizeTimer = null;
-  window.addEventListener("resize", () => {
-    if (views.reader.hidden) return;
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-      const ratio =
-        state.pageCount > 1 ? state.pageIndex / (state.pageCount - 1) : 0;
-      layoutPager({ ratio });
-    }, 120);
-  });
 
   window.addEventListener("hashchange", route);
   route();
