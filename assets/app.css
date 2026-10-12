@@ -295,7 +295,8 @@ input {
 }
 
 .chapter-content p {
-  margin: 0 0 1.15rem; /* source content p margin-bottom ~20px */
+  margin: 0 0 1.85rem; /* more space between paragraphs */
+  text-indent: 2em; /* 每段首行縮進兩格 */
 }
 
 .chapter-content p:last-child {
