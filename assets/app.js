@@ -14,7 +14,12 @@
   const NS = "reading-demo";
   const KEY_CHAPTER_CACHE = `${NS}:chapterCache`;
   const KEY_LAST_READ = (bookId) => `${NS}:lastRead:${bookId}`;
+  const KEY_FONT_SIZE = `${NS}:fontSize`;
   const WINDOW_RADIUS = 10;
+  const FONT_MIN = 14;
+  const FONT_MAX = 28;
+  const FONT_STEP = 1;
+  const FONT_DEFAULT = 18;
 
   const $ = (sel) => document.querySelector(sel);
   const views = {
@@ -31,6 +36,28 @@
     indexByNumber: new Map(),
     currentNumber: null,
   };
+
+  function getFontSize() {
+    const n = Number(localStorage.getItem(KEY_FONT_SIZE));
+    if (Number.isFinite(n) && n >= FONT_MIN && n <= FONT_MAX) return n;
+    return FONT_DEFAULT;
+  }
+
+  function applyFontSize(px) {
+    const size = Math.max(FONT_MIN, Math.min(FONT_MAX, px));
+    document.documentElement.style.setProperty("--body-size", `${size}px`);
+    localStorage.setItem(KEY_FONT_SIZE, String(size));
+    const smaller = $("#font-smaller");
+    const larger = $("#font-larger");
+    if (smaller) smaller.disabled = size <= FONT_MIN;
+    if (larger) larger.disabled = size >= FONT_MAX;
+    return size;
+  }
+
+  function bumpFontSize(delta) {
+    const next = applyFontSize(getFontSize() + delta);
+    toast(`字體 ${next}px`);
+  }
 
   function showView(name) {
     Object.entries(views).forEach(([k, el]) => {
@@ -464,6 +491,10 @@
       setHash(`/book/${state.book.id}/chapter/${best}`);
     }
   });
+
+  $("#font-smaller").addEventListener("click", () => bumpFontSize(-FONT_STEP));
+  $("#font-larger").addEventListener("click", () => bumpFontSize(FONT_STEP));
+  applyFontSize(getFontSize());
 
   window.addEventListener("hashchange", route);
   route();
