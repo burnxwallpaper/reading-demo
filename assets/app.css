@@ -353,6 +353,132 @@ input {
   cursor: not-allowed;
 }
 
+
+/* ---- Paginated reader ---- */
+.reader-view {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.reader-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  border-bottom: 1px solid #292929;
+  background: var(--bg);
+  flex-shrink: 0;
+}
+
+.reader-status #nav-chapter-top {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.reader-status #page-indicator {
+  font-variant-numeric: tabular-nums;
+}
+
+.pager-shell {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-width: 46rem;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.pager-clip {
+  height: 100%;
+  overflow: hidden;
+  padding: 0.55rem 0.75rem 0.35rem;
+  box-sizing: border-box;
+}
+
+.pager-flow {
+  height: 100%;
+  column-fill: auto;
+  column-gap: 0;
+  will-change: transform;
+  transition: transform 0.18s ease-out;
+}
+
+.pager-flow .chapter-name {
+  margin: 0 0 0.65rem;
+  padding: 0.65rem 0.75rem;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  box-shadow: var(--inset);
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.4;
+  break-inside: avoid;
+  break-after: avoid;
+}
+
+.pager-flow .chapter-content {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  font-size: var(--body-size);
+  line-height: var(--body-lh);
+  word-break: break-word;
+}
+
+.pager-flow .chapter-content p {
+  margin: 0 0 1.85rem;
+  text-indent: 2em;
+  orphans: 2;
+  widows: 2;
+}
+
+.pager-flow .chapter-content p:last-child {
+  margin-bottom: 0;
+}
+
+.tap-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 42%;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  z-index: 5;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tap-left {
+  left: 0;
+}
+
+.tap-right {
+  right: 0;
+}
+
+.reader-view .bottom-nav {
+  flex-shrink: 0;
+  padding-top: 0.35rem;
+  padding-bottom: calc(0.65rem + var(--safe-b));
+  border-top: 1px solid #292929;
+  background: var(--bg);
+}
+
+.reader-view .top-nav {
+  display: none;
+}
+
 @media (min-width: 768px) {
   :root {
     --body-size: 19px;

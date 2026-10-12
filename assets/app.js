@@ -35,6 +35,10 @@
     byNumber: new Map(),
     indexByNumber: new Map(),
     currentNumber: null,
+    pageIndex: 0,
+    pageCount: 1,
+    pageWidth: 0,
+    pagingReady: false,
   };
 
   function getFontSize() {
@@ -57,6 +61,12 @@
   function bumpFontSize(delta) {
     const next = applyFontSize(getFontSize() + delta);
     toast(`字體 ${next}px`);
+    if (!views.reader.hidden) {
+      // Keep approximate reading position across reflow.
+      const ratio =
+        state.pageCount > 1 ? state.pageIndex / (state.pageCount - 1) : 0;
+      requestAnimationFrame(() => layoutPager({ ratio }));
+    }
   }
 
   function showView(name) {
@@ -352,18 +362,106 @@
       const el = $(sel);
       if (el) el.textContent = label;
     });
-    [
-      ["#prev-top", prev],
-      ["#prev-bottom", prev],
-      ["#next-top", next],
-      ["#next-bottom", next],
-    ].forEach(([sel, meta]) => {
-      const btn = $(sel);
-      btn.disabled = !meta;
-      btn.onclick = meta
-        ? () => setHash(`/book/${state.book.id}/chapter/${meta.number}`)
-        : null;
-    });
+    const btn = $("#prev-bottom");
+    btn.disabled = !prev;
+    btn.onclick = prev
+      ? () => setHash(`/book/${state.book.id}/chapter/${prev.number}`)
+      : null;
+    const btnN = $("#next-bottom");
+    btnN.disabled = !next;
+    btnN.onclick = next
+      ? () => setHash(`/book/${state.book.id}/chapter/${next.number}`)
+      : null;
+  }
+
+  function updatePageIndicator() {
+    const el = $("#page-indicator");
+    if (!el) return;
+    if (!state.pagingReady) {
+      el.textContent = "分頁中…";
+      return;
+    }
+    el.textContent = `第 ${state.pageIndex + 1} / ${state.pageCount} 頁`;
+  }
+
+  function goToPage(index, { animate = true } = {}) {
+    const flow = $("#pager-flow");
+    const clip = $("#pager-clip");
+    if (!flow || !clip || !state.pageWidth) return;
+    const max = Math.max(0, state.pageCount - 1);
+    const i = Math.max(0, Math.min(max, index));
+    state.pageIndex = i;
+    if (!animate) {
+      const prev = flow.style.transition;
+      flow.style.transition = "none";
+      flow.style.transform = `translate3d(${-i * state.pageWidth}px, 0, 0)`;
+      // force reflow then restore
+      void flow.offsetWidth;
+      flow.style.transition = prev || "";
+    } else {
+      flow.style.transform = `translate3d(${-i * state.pageWidth}px, 0, 0)`;
+    }
+    updatePageIndicator();
+  }
+
+  function layoutPager({ ratio = null, page = null } = {}) {
+    const clip = $("#pager-clip");
+    const flow = $("#pager-flow");
+    if (!clip || !flow || views.reader.hidden) return;
+
+    const w = Math.max(1, Math.floor(clip.clientWidth));
+    const h = Math.max(1, Math.floor(clip.clientHeight));
+    state.pageWidth = w;
+
+    flow.style.width = `${w}px`;
+    flow.style.height = `${h}px`;
+    flow.style.columnWidth = `${w}px`;
+    flow.style.columnGap = "0px";
+    flow.style.columnFill = "auto";
+    flow.style.transition = "none";
+    flow.style.transform = "translate3d(0, 0, 0)";
+
+    // Measure columns created to the right.
+    void flow.offsetWidth;
+    const pages = Math.max(1, Math.ceil(flow.scrollWidth / w - 0.001));
+    state.pageCount = pages;
+    state.pagingReady = true;
+
+    let target = 0;
+    if (page != null && Number.isFinite(page)) {
+      target = page;
+    } else if (ratio != null && Number.isFinite(ratio) && pages > 1) {
+      target = Math.round(ratio * (pages - 1));
+    }
+    flow.style.transition = "";
+    goToPage(target, { animate: false });
+  }
+
+  function turnPage(delta) {
+    if (!state.pagingReady) return;
+    const next = state.pageIndex + delta;
+    if (next >= 0 && next < state.pageCount) {
+      goToPage(next);
+      return;
+    }
+    // Cross chapter at ends.
+    if (delta > 0) {
+      const meta = neighbor(state.currentNumber, 1);
+      if (meta) {
+        toast(`下一章 · 第 ${meta.number} 章`);
+        setHash(`/book/${state.book.id}/chapter/${meta.number}`);
+      } else {
+        toast("已是最後一章");
+      }
+    } else {
+      const meta = neighbor(state.currentNumber, -1);
+      if (meta) {
+        toast(`上一章 · 第 ${meta.number} 章`);
+        setHash(`/book/${state.book.id}/chapter/${meta.number}`);
+      } else {
+        toast("已是第一章");
+      }
+    }
   }
 
   async function renderReader(number) {
@@ -386,6 +484,11 @@
     // Prefer cache for instant paint, then refresh window in background.
     let paragraphs;
     const hit = getCachedChapter(state.book.id, number);
+    state.pagingReady = false;
+    state.pageIndex = 0;
+    state.pageCount = 1;
+    updatePageIndicator();
+
     if (hit && hit.body) {
       paragraphs = hit.body.split(/\n\s*\n/).filter(Boolean);
       $("#chapter-content").innerHTML = renderParagraphs(paragraphs);
@@ -399,6 +502,10 @@
         return;
       }
     }
+
+    // Wait for layout (reader flex height) then paginate.
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    layoutPager({ page: 0 });
 
     // Auto-cache: REPLACE window around current chapter (±10 by list index).
     const status = $("#reader-cache-status");
@@ -495,6 +602,26 @@
   $("#font-smaller").addEventListener("click", () => bumpFontSize(-FONT_STEP));
   $("#font-larger").addEventListener("click", () => bumpFontSize(FONT_STEP));
   applyFontSize(getFontSize());
+
+  $("#tap-left").addEventListener("click", (e) => {
+    e.preventDefault();
+    turnPage(-1);
+  });
+  $("#tap-right").addEventListener("click", (e) => {
+    e.preventDefault();
+    turnPage(1);
+  });
+
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    if (views.reader.hidden) return;
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      const ratio =
+        state.pageCount > 1 ? state.pageIndex / (state.pageCount - 1) : 0;
+      layoutPager({ ratio });
+    }, 120);
+  });
 
   window.addEventListener("hashchange", route);
   route();
