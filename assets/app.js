@@ -6,18 +6,16 @@
  *   flip   — paginated content-swap (no slide animation, no scroll);
  *            chrome hidden until middle tap
  *
- * Cache window (REPLACE entire content cache on each chapter open):
- *   Window = chapters[max(0, i - 10) .. min(len-1, i + 10)]
+ * Prefs (font, mode, last-read) use sessionStorage.
  */
 (function () {
   "use strict";
 
   const NS = "reading-demo";
-  const KEY_CHAPTER_CACHE = `${NS}:chapterCache`;
   const KEY_LAST_READ = (bookId) => `${NS}:lastRead:${bookId}`;
   const KEY_FONT_SIZE = `${NS}:fontSize`;
   const KEY_READ_MODE = `${NS}:readMode`;
-  const WINDOW_RADIUS = 10;
+  const store = sessionStorage;
   const FONT_MIN = 14;
   const FONT_MAX = 28;
   const FONT_STEP = 1;
@@ -46,7 +44,7 @@
   };
 
   function getFontSize() {
-    const n = Number(localStorage.getItem(KEY_FONT_SIZE));
+    const n = Number(store.getItem(KEY_FONT_SIZE));
     if (Number.isFinite(n) && n >= FONT_MIN && n <= FONT_MAX) return n;
     return FONT_DEFAULT;
   }
@@ -54,7 +52,7 @@
   function applyFontSize(px) {
     const size = Math.max(FONT_MIN, Math.min(FONT_MAX, px));
     document.documentElement.style.setProperty("--body-size", `${size}px`);
-    localStorage.setItem(KEY_FONT_SIZE, String(size));
+    store.setItem(KEY_FONT_SIZE, String(size));
     ["#font-smaller", "#flip-font-smaller"].forEach((sel) => {
       const el = $(sel);
       if (el) el.disabled = size <= FONT_MIN;
@@ -77,13 +75,13 @@
   }
 
   function getReadMode() {
-    const m = localStorage.getItem(KEY_READ_MODE);
+    const m = store.getItem(KEY_READ_MODE);
     return m === "flip" ? "flip" : "scroll";
   }
 
   function setReadMode(mode) {
     state.mode = mode === "flip" ? "flip" : "scroll";
-    localStorage.setItem(KEY_READ_MODE, state.mode);
+    store.setItem(KEY_READ_MODE, state.mode);
     applyReadMode();
   }
 
@@ -199,102 +197,15 @@
     };
   }
 
-  function readChapterCache() {
-    try {
-      const raw = localStorage.getItem(KEY_CHAPTER_CACHE);
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  }
-
-  function writeChapterCache(payload) {
-    localStorage.setItem(KEY_CHAPTER_CACHE, JSON.stringify(payload));
-  }
-
   function getLastRead(bookId) {
-    const n = Number(localStorage.getItem(KEY_LAST_READ(bookId)));
+    const n = Number(store.getItem(KEY_LAST_READ(bookId)));
     return Number.isFinite(n) ? n : null;
   }
 
   function setLastRead(bookId, number) {
-    localStorage.setItem(KEY_LAST_READ(bookId), String(number));
+    store.setItem(KEY_LAST_READ(bookId), String(number));
   }
 
-  function cacheWindowIndices(centerIndex, len) {
-    const lo = Math.max(0, centerIndex - WINDOW_RADIUS);
-    const hi = Math.min(len - 1, centerIndex + WINDOW_RADIUS);
-    const out = [];
-    for (let i = lo; i <= hi; i++) out.push(i);
-    return out;
-  }
-
-  async function refreshChapterCache(centerNumber) {
-    const i = state.indexByNumber.get(centerNumber);
-    if (i == null) return null;
-    const indices = cacheWindowIndices(i, state.chapters.length);
-    const existing = readChapterCache();
-    const reuse =
-      existing &&
-      existing.bookId === state.book.id &&
-      existing.chapters &&
-      typeof existing.chapters === "object"
-        ? existing.chapters
-        : {};
-
-    const chapters = {};
-    await Promise.all(
-      indices.map(async (idx) => {
-        const meta = state.chapters[idx];
-        const key = String(meta.number);
-        if (reuse[key] && reuse[key].body != null) {
-          chapters[key] = {
-            number: meta.number,
-            title: reuse[key].title || meta.title,
-            body: reuse[key].body,
-          };
-          return;
-        }
-        try {
-          const loaded = await fetchChapterText(meta);
-          chapters[key] = {
-            number: loaded.number,
-            title: loaded.title,
-            body: loaded.body,
-          };
-        } catch (err) {
-          console.warn(err);
-        }
-      })
-    );
-
-    const payload = {
-      bookId: state.book.id,
-      center: centerNumber,
-      from: state.chapters[indices[0]].number,
-      to: state.chapters[indices[indices.length - 1]].number,
-      count: Object.keys(chapters).length,
-      updatedAt: new Date().toISOString(),
-      chapters,
-    };
-    try {
-      writeChapterCache(payload);
-    } catch (err) {
-      console.warn("localStorage quota", err);
-      try {
-        writeChapterCache(payload);
-      } catch {
-        toast("緩存空間不足，改為僅線上閱讀");
-      }
-    }
-    return payload;
-  }
-
-  function getCachedChapter(bookId, number) {
-    const cache = readChapterCache();
-    if (!cache || cache.bookId !== bookId) return null;
-    return cache.chapters && cache.chapters[String(number)];
-  }
 
   function escapeHtml(s) {
     return String(s)
@@ -609,21 +520,11 @@
       cont.hidden = true;
     }
 
-    const cache = readChapterCache();
     const hint = $("#toc-cache-hint");
-    if (cache && cache.bookId === state.book.id) {
-      hint.textContent = `本地緩存：第 ${cache.from}–${cache.to} 章（共 ${cache.count} 章，每次開啟章節會整包替換）`;
-    } else {
-      hint.textContent = "尚未緩存章節；開啟任一章後會自動緩存當前 ±10 章。";
-    }
+    if (hint) hint.textContent = "";
 
     const list = $("#chapter-list");
     const q = ($("#toc-search").value || "").trim().toLowerCase();
-    const cachedSet = new Set(
-      cache && cache.bookId === state.book.id
-        ? Object.keys(cache.chapters || {})
-        : []
-    );
 
     list.innerHTML = "";
     const frag = document.createDocumentFragment();
@@ -634,7 +535,6 @@
       btn.type = "button";
       btn.className = "chapter-item";
       if (last === c.number) btn.classList.add("current");
-      if (cachedSet.has(String(c.number))) btn.classList.add("cached");
       btn.innerHTML = `<span class="num">第 ${c.number} 章</span><span class="ctitle">${escapeHtml(c.title)}</span>`;
       btn.addEventListener("click", () =>
         setHash(`/book/${state.book.id}/chapter/${c.number}`)
@@ -672,48 +572,28 @@
     applyReadMode();
 
     let paragraphs;
-    const hit = getCachedChapter(state.book.id, number);
-    if (hit && hit.body) {
-      paragraphs = hit.body.split(/\n\s*\n/).filter(Boolean);
-    } else {
-      try {
-        const loaded = await fetchChapterText(meta);
-        paragraphs = loaded.paragraphs;
-      } catch (err) {
-        const msg = `<p>載入失敗：${escapeHtml(err.message)}</p>`;
-        $("#chapter-content").innerHTML = msg;
-        $("#flip-page-inner").innerHTML = msg;
-        return;
-      }
+    try {
+      const loaded = await fetchChapterText(meta);
+      paragraphs = loaded.paragraphs;
+    } catch (err) {
+      const msg = `<p>載入失敗：${escapeHtml(err.message)}</p>`;
+      $("#chapter-content").innerHTML = msg;
+      $("#flip-page-inner").innerHTML = msg;
+      return;
     }
     state.paragraphs = paragraphs;
 
     $("#chapter-content").innerHTML = renderParagraphs(paragraphs);
+    const a = $("#reader-cache-status");
+    const b = $("#flip-cache-status");
+    if (a) a.textContent = "";
+    if (b) b.textContent = "";
 
     if (state.mode === "flip") {
       await new Promise((r) =>
         requestAnimationFrame(() => requestAnimationFrame(r))
       );
       rebuildFlipPages({ page: 0 });
-    }
-
-    const statusText = (t) => {
-      const a = $("#reader-cache-status");
-      const b = $("#flip-cache-status");
-      if (a) a.textContent = t;
-      if (b) b.textContent = t;
-    };
-    statusText("緩存更新中…");
-    try {
-      const payload = await refreshChapterCache(number);
-      if (payload) {
-        statusText(
-          `已緩存 第${payload.from}–${payload.to}章（${payload.count}章 · 整包替換）`
-        );
-      } else statusText("");
-    } catch (err) {
-      console.warn(err);
-      statusText("緩存失敗（仍可線上閱讀）");
     }
   }
 
