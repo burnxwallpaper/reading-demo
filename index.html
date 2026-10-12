@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#181818" />
+  <title>閱讀存檔</title>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Home: book catalog -->
+    <section id="view-home" class="view" hidden>
+      <header class="topbar">
+        <h1 class="topbar-title">書庫</h1>
+      </header>
+      <main class="page">
+        <ul id="book-list" class="book-list"></ul>
+      </main>
+    </section>
+
+    <!-- TOC -->
+    <section id="view-toc" class="view" hidden>
+      <header class="topbar">
+        <button type="button" class="icon-btn" id="toc-back" aria-label="返回書庫">←</button>
+        <div class="topbar-text">
+          <h1 class="topbar-title" id="toc-book-title">目錄</h1>
+          <p class="topbar-sub" id="toc-book-meta"></p>
+        </div>
+      </header>
+      <div class="toc-tools">
+        <input type="search" id="toc-search" placeholder="搜尋章節標題…" enterkeyhint="search" />
+        <div class="jump-row">
+          <input type="number" id="toc-jump" placeholder="章號" inputmode="numeric" />
+          <button type="button" id="toc-jump-btn" class="btn">跳轉</button>
+          <button type="button" id="toc-continue" class="btn btn-accent" hidden>續讀</button>
+        </div>
+        <p class="cache-hint" id="toc-cache-hint"></p>
+      </div>
+      <main class="page toc-page">
+        <ul id="chapter-list" class="chapter-list"></ul>
+      </main>
+    </section>
+
+    <!-- Reader -->
+    <section id="view-reader" class="view" hidden>
+      <header class="topbar reader-topbar">
+        <button type="button" class="icon-btn" id="reader-toc" aria-label="目錄">目錄</button>
+        <div class="topbar-text">
+          <h1 class="topbar-title" id="reader-title">章節</h1>
+          <p class="topbar-sub" id="reader-cache-status"></p>
+        </div>
+        <button type="button" class="icon-btn" id="reader-home" aria-label="書庫">⌂</button>
+      </header>
+      <nav class="chapter-nav top-nav">
+        <button type="button" id="prev-top" class="btn nav-btn">上一章</button>
+        <button type="button" id="next-top" class="btn nav-btn">下一章</button>
+      </nav>
+      <article class="chapter-detail">
+        <h2 class="chapter-name" id="chapter-name"></h2>
+        <div class="chapter-content" id="chapter-content"></div>
+      </article>
+      <nav class="chapter-nav bottom-nav">
+        <button type="button" id="prev-bottom" class="btn nav-btn">上一章</button>
+        <button type="button" id="next-bottom" class="btn nav-btn">下一章</button>
+      </nav>
+    </section>
+
+    <div id="toast" class="toast" hidden></div>
+  </div>
+  <script src="assets/app.js"></script>
+</body>
+</html>
