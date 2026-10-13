@@ -28,6 +28,10 @@
     reader: $("#view-reader"),
   };
 
+  /** In-memory chapter text only (not written to storage). */
+  const chapterMem = new Map(); // key: filepath -> { number, title, body, paragraphs }
+  const chapterInflight = new Map(); // key: filepath -> Promise
+
   const state = {
     books: [],
     book: null,
@@ -167,6 +171,8 @@
     state.chapters = chapters;
     state.byNumber = new Map(chapters.map((c) => [c.number, c]));
     state.indexByNumber = new Map(chapters.map((c, i) => [c.number, i]));
+    chapterMem.clear();
+    chapterInflight.clear();
     return book;
   }
 
@@ -184,17 +190,44 @@
       .filter(Boolean);
   }
 
+  function chapterKey(meta) {
+    return meta.filepath;
+  }
+
   async function fetchChapterText(meta) {
-    const res = await fetch(meta.filepath, { cache: "force-cache" });
-    if (!res.ok) throw new Error(`無法載入第 ${meta.number} 章`);
-    const text = await res.text();
-    const paragraphs = mdToParagraphs(text);
-    return {
-      number: meta.number,
-      title: meta.title,
-      body: paragraphs.join("\n\n"),
-      paragraphs,
-    };
+    const key = chapterKey(meta);
+    if (chapterMem.has(key)) return chapterMem.get(key);
+    if (chapterInflight.has(key)) return chapterInflight.get(key);
+
+    const p = (async () => {
+      const res = await fetch(meta.filepath, { cache: "force-cache" });
+      if (!res.ok) throw new Error(`無法載入第 ${meta.number} 章`);
+      const text = await res.text();
+      const paragraphs = mdToParagraphs(text);
+      const loaded = {
+        number: meta.number,
+        title: meta.title,
+        body: paragraphs.join("\n\n"),
+        paragraphs,
+      };
+      chapterMem.set(key, loaded);
+      return loaded;
+    })();
+
+    chapterInflight.set(key, p);
+    try {
+      return await p;
+    } finally {
+      chapterInflight.delete(key);
+    }
+  }
+
+  function preloadNeighbor(number, delta) {
+    const meta = neighbor(number, delta);
+    if (!meta) return;
+    const key = chapterKey(meta);
+    if (chapterMem.has(key) || chapterInflight.has(key)) return;
+    fetchChapterText(meta).catch(() => {});
   }
 
   function getLastRead(bookId) {
@@ -563,19 +596,35 @@
     $("#chapter-name").textContent = meta.title;
     $("#reader-title").textContent = state.book.title;
     $("#flip-title").textContent = state.book.title;
-    $("#chapter-content").innerHTML = `<p style="color:var(--muted)">載入中…</p>`;
-    $("#flip-page-inner").innerHTML = `<p style="color:var(--muted)">載入中…</p>`;
     bindNav(number);
     setLastRead(state.book.id, number);
     document.title = `${meta.title} · ${state.book.title}`;
     setFlipUi(false);
     applyReadMode();
 
+    const cached = chapterMem.get(chapterKey(meta));
+    let loadingTimer = null;
+    if (cached) {
+      $("#chapter-content").innerHTML = renderParagraphs(cached.paragraphs);
+      $("#flip-page-inner").innerHTML = renderParagraphs(cached.paragraphs);
+    } else {
+      // Delay 載入中 so HTTP force-cache hits do not flash.
+      loadingTimer = setTimeout(() => {
+        if (state.currentNumber !== number) return;
+        $("#chapter-content").innerHTML = `<p style="color:var(--muted)">載入中…</p>`;
+        $("#flip-page-inner").innerHTML = `<p style="color:var(--muted)">載入中…</p>`;
+      }, 60);
+    }
+
     let paragraphs;
     try {
       const loaded = await fetchChapterText(meta);
+      if (loadingTimer) clearTimeout(loadingTimer);
+      if (state.currentNumber !== number) return;
       paragraphs = loaded.paragraphs;
     } catch (err) {
+      if (loadingTimer) clearTimeout(loadingTimer);
+      if (state.currentNumber !== number) return;
       const msg = `<p>載入失敗：${escapeHtml(err.message)}</p>`;
       $("#chapter-content").innerHTML = msg;
       $("#flip-page-inner").innerHTML = msg;
@@ -593,8 +642,13 @@
       await new Promise((r) =>
         requestAnimationFrame(() => requestAnimationFrame(r))
       );
+      if (state.currentNumber !== number) return;
       rebuildFlipPages({ page: 0 });
     }
+
+    // Prefetch next (and prev) into memory using HTTP cache when available.
+    preloadNeighbor(number, 1);
+    preloadNeighbor(number, -1);
   }
 
   async function route() {
