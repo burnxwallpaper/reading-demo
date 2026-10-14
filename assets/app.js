@@ -45,6 +45,7 @@
     pageIndex: 0,
     pages: [], // HTML strings
     pagingReady: false,
+    enterPage: null, // null | number | "last" when crossing chapters via page tap
   };
 
   function getFontSize() {
@@ -473,7 +474,8 @@
     state.pagingReady = true;
 
     let target = 0;
-    if (page != null && Number.isFinite(page)) target = page;
+    if (page === "last") target = Math.max(0, state.pages.length - 1);
+    else if (page != null && Number.isFinite(page)) target = page;
     else if (ratio != null && Number.isFinite(ratio) && state.pages.length > 1) {
       target = Math.round(ratio * (state.pages.length - 1));
     }
@@ -491,12 +493,14 @@
     if (delta > 0) {
       const meta = neighbor(state.currentNumber, 1);
       if (meta) {
+        state.enterPage = 0;
         toast(`下一章 · 第 ${meta.number} 章`);
         setHash(`/book/${state.book.id}/chapter/${meta.number}`);
       } else toast("已是最後一章");
     } else {
       const meta = neighbor(state.currentNumber, -1);
       if (meta) {
+        state.enterPage = "last";
         toast(`上一章 · 第 ${meta.number} 章`);
         setHash(`/book/${state.book.id}/chapter/${meta.number}`);
       } else toast("已是第一章");
@@ -652,7 +656,11 @@
         requestAnimationFrame(() => requestAnimationFrame(r))
       );
       if (state.currentNumber !== number) return;
-      rebuildFlipPages({ page: 0 });
+      const enter = state.enterPage;
+      state.enterPage = null;
+      rebuildFlipPages({ page: enter == null ? 0 : enter });
+    } else {
+      state.enterPage = null;
     }
 
     // Prefetch next 5 (+ prev) into memory; reuses browser HTTP cache.
