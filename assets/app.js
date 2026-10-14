@@ -222,12 +222,21 @@
     }
   }
 
-  function preloadNeighbor(number, delta) {
-    const meta = neighbor(number, delta);
-    if (!meta) return;
+  const PRELOAD_AHEAD = 5;
+
+  function preloadChapter(meta) {
+    if (!meta) return Promise.resolve();
     const key = chapterKey(meta);
-    if (chapterMem.has(key) || chapterInflight.has(key)) return;
-    fetchChapterText(meta).catch(() => {});
+    if (chapterMem.has(key) || chapterInflight.has(key)) return Promise.resolve();
+    return fetchChapterText(meta).catch(() => {});
+  }
+
+  /** Prefetch next N chapters (HTTP force-cache + memory), then previous one. */
+  async function preloadAround(number) {
+    for (let d = 1; d <= PRELOAD_AHEAD; d++) {
+      await preloadChapter(neighbor(number, d));
+    }
+    await preloadChapter(neighbor(number, -1));
   }
 
   function getLastRead(bookId) {
@@ -646,9 +655,8 @@
       rebuildFlipPages({ page: 0 });
     }
 
-    // Prefetch next (and prev) into memory using HTTP cache when available.
-    preloadNeighbor(number, 1);
-    preloadNeighbor(number, -1);
+    // Prefetch next 5 (+ prev) into memory; reuses browser HTTP cache.
+    preloadAround(number);
   }
 
   async function route() {
