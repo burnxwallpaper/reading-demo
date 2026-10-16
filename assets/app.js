@@ -7,6 +7,7 @@
  *   scroll — continuous page
  *
  * Prefs (font, mode, last-read) use sessionStorage.
+ * Chapter/catalog bodies use Cache API (not localStorage) for offline.
  */
 (function () {
   "use strict";
@@ -28,9 +29,10 @@
     reader: $("#view-reader"),
   };
 
-  /** In-memory chapter text only (not written to storage). */
+  /** In-memory chapter text; durable offline copy lives in Cache API. */
   const chapterMem = new Map(); // key: filepath -> { number, title, body, paragraphs }
   const chapterInflight = new Map(); // key: filepath -> Promise
+  const CACHE_NAME = `${NS}-offline-v1`;
 
   const state = {
     books: [],
@@ -156,8 +158,69 @@
     else route();
   }
 
+  function absUrl(path) {
+    return new URL(path, location.href).href;
+  }
+
+  async function openOfflineCache() {
+    if (!("caches" in window)) return null;
+    try {
+      return await caches.open(CACHE_NAME);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Network-first with Cache API fallback (works offline after a prior visit).
+   * Does not use localStorage/sessionStorage for bodies.
+   */
+  async function fetchWithOfflineCache(path, { networkCache = "no-cache" } = {}) {
+    const url = absUrl(path);
+    const cache = await openOfflineCache();
+
+    async function network() {
+      const res = await fetch(path, { cache: networkCache });
+      if (res.ok && cache) {
+        try {
+          await cache.put(url, res.clone());
+        } catch {
+          /* ignore quota / private mode */
+        }
+      }
+      return res;
+    }
+
+    async function fromCache() {
+      if (!cache) return null;
+      try {
+        return (await cache.match(url)) || null;
+      } catch {
+        return null;
+      }
+    }
+
+    if (!navigator.onLine) {
+      const hit = await fromCache();
+      if (hit) return hit;
+      throw new Error("離線且無緩存");
+    }
+
+    try {
+      const res = await network();
+      if (res.ok) return res;
+      const hit = await fromCache();
+      if (hit) return hit;
+      return res;
+    } catch (err) {
+      const hit = await fromCache();
+      if (hit) return hit;
+      throw err;
+    }
+  }
+
   async function loadBooks() {
-    const res = await fetch("books.json", { cache: "no-cache" });
+    const res = await fetchWithOfflineCache("books.json", { networkCache: "no-cache" });
     if (!res.ok) throw new Error("無法載入 books.json");
     state.books = await res.json();
   }
@@ -165,7 +228,9 @@
   async function loadBook(bookId) {
     const book = state.books.find((b) => b.id === bookId);
     if (!book) throw new Error("找不到此書");
-    const res = await fetch(book.manifest || "manifest.json", { cache: "no-cache" });
+    const res = await fetchWithOfflineCache(book.manifest || "manifest.json", {
+      networkCache: "no-cache",
+    });
     if (!res.ok) throw new Error("無法載入章節目錄");
     const chapters = await res.json();
     state.book = book;
@@ -195,22 +260,65 @@
     return meta.filepath;
   }
 
+  function makeLoaded(meta, text) {
+    const paragraphs = mdToParagraphs(text);
+    return {
+      number: meta.number,
+      title: meta.title,
+      body: paragraphs.join("\n\n"),
+      paragraphs,
+    };
+  }
+
+  async function readChapterFromOfflineCache(meta) {
+    const cache = await openOfflineCache();
+    if (!cache) return null;
+    try {
+      const hit = await cache.match(absUrl(meta.filepath));
+      if (!hit || !hit.ok) return null;
+      const text = await hit.text();
+      const loaded = makeLoaded(meta, text);
+      chapterMem.set(chapterKey(meta), loaded);
+      return loaded;
+    } catch {
+      return null;
+    }
+  }
+
   async function fetchChapterText(meta) {
     const key = chapterKey(meta);
     if (chapterMem.has(key)) return chapterMem.get(key);
     if (chapterInflight.has(key)) return chapterInflight.get(key);
 
     const p = (async () => {
-      const res = await fetch(meta.filepath, { cache: "force-cache" });
-      if (!res.ok) throw new Error(`無法載入第 ${meta.number} 章`);
+      // Prefer durable Cache API before network (offline + after HTTP max-age expires).
+      const cached = await readChapterFromOfflineCache(meta);
+      if (cached) {
+        if (navigator.onLine) {
+          // Refresh in background when online; keep showing cached immediately.
+          fetchWithOfflineCache(meta.filepath, { networkCache: "force-cache" })
+            .then(async (res) => {
+              if (!res.ok) return;
+              const text = await res.text();
+              chapterMem.set(key, makeLoaded(meta, text));
+            })
+            .catch(() => {});
+        }
+        return cached;
+      }
+
+      const res = await fetchWithOfflineCache(meta.filepath, {
+        networkCache: "force-cache",
+      });
+      if (!res.ok) {
+        throw new Error(
+          navigator.onLine
+            ? `無法載入第 ${meta.number} 章`
+            : `離線且第 ${meta.number} 章未緩存`
+        );
+      }
       const text = await res.text();
-      const paragraphs = mdToParagraphs(text);
-      const loaded = {
-        number: meta.number,
-        title: meta.title,
-        body: paragraphs.join("\n\n"),
-        paragraphs,
-      };
+      const loaded = makeLoaded(meta, text);
       chapterMem.set(key, loaded);
       return loaded;
     })();
@@ -663,7 +771,7 @@
       state.enterPage = null;
     }
 
-    // Prefetch next 5 (+ prev) into memory; reuses browser HTTP cache.
+    // Prefetch next 5 (+ prev) into memory + Cache API.
     preloadAround(number);
   }
 
