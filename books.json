@@ -20,5 +20,16 @@
     "chapterCount": 1000,
     "firstChapter": 1,
     "lastChapter": 1000
+  },
+  {
+    "id": "jin-tian-hui-mie-shi-jie-le-ma",
+    "title": "今天毀滅世界了嗎？",
+    "author": "如星也",
+    "source": "https://czbooks.net/n/s6khme",
+    "description": "作者存檔（章節 1–444）",
+    "manifest": "jin-tian-hui-mie-shi-jie-le-ma/manifest.json",
+    "chapterCount": 435,
+    "firstChapter": 1,
+    "lastChapter": 444
   }
 ]
